@@ -1,0 +1,538 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Variable.UDT.sOrders.Define("sWeek",String,Week_No)
+Variable.UDT.sOrders.Define("sUnique",String,Order_No)
+Variable.UDT.sOrders.Define("sCustName",String,Customer_Name)
+Variable.UDT.sOrders.Define("sSalesPerson",String,SalesPerson)
+Variable.UDT.sOrders.Define("sState",String,State)
+Variable.UDT.sOrders.Define("iBIRunID",Long,BIRUNID)
+Variable.UDT.sOrders.Define("sAZclosed",String,AZ_Close)
+Variable.UDT.sOrders.Define("sCZclosed",String,CZ_Close)
+Variable.UDT.sOrders.Define("sAZvalue",Long,AZ)
+Variable.UDT.sOrders.Define("sCZvalue",Long,CZ)
+Variable.UDT.sOrders.Define("sFZclosed",String,FZ_Close)
+Variable.UDT.sOrders.Define("sFZvalue",Long,FZ)
+Variable.UDT.sOrders.Define("sHZclosed",String,HZ_Close)
+Variable.UDT.sOrders.Define("sHZvalue",Long,HZ)
+Variable.UDT.sOrders.Define("sRZclosed",String,RZ_Close)
+Variable.UDT.sOrders.Define("sRZvalue",Long,RZ)
+Variable.UDT.sOrders.Define("sSZclosed",String,SZ_Close)
+Variable.UDT.sOrders.Define("sSZvalue",Long,SZ)
+Variable.UDT.sOrders.Define("sComment",String,Comments)
+Variable.UDT.sOrders.Define("sMZClosed",String,MZ_Close)
+Variable.UDT.sOrders.Define("sMZValue",Long,MZ)
+Variable.UDT.sOrders.Define("sBZClosed",String,BZ_Close)
+Variable.UDT.sOrders.Define("sBZValue",Long,BZ)
+Variable.UDT.sOrders.Define("fExtension",Float,Total_Order)
+Variable.UDT.sOrders.Define("sOrderNo",String,GS_OrderNo)
+Variable.uGlobal.sOrders.Declare("sOrders")
+Variable.Global.iBIRunID.Declare(Long,0)
+Variable.Global.iBILogID.Declare(Long,0)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'This is a Custom Script Created for Conveyors by SKT
+'This script will create a report where the sales order product line and the work order workcenter match.
+'This will allow the user to see how many sales order are being made for each Workcenter.  The report
+'will also notify the user if that workcenter has been completed.
+'Created on 8/27/2014
+
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+F.ODBC.Connection!conx.OpenLocalRecordsetRW("rst","Delete From GCG_4010_CON_StrpLst")
+F.ODBC.conx!rst.Close
+
+F.Intrinsic.Control.CallSub(Getdata)
+F.Intrinsic.Control.CallSub(Report)
+F.Intrinsic.Control.CallSub(Unload)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4010_Con_StripRPT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.GetData.Start
+F.Intrinsic.Control.SetErrorHandler("GetData_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.sSql2.Declare(String)
+V.Local.sOrder.Declare(String)
+V.Local.sWeek.Declare(String)
+V.Local.sCustID.Declare(String)
+V.Local.sUnique.Declare(String)
+V.Local.sExtension.Declare(Float)
+V.Local.sProdLine.Declare(String)
+V.Local.sJob.Declare(String)
+V.Local.sSuffix.Declare(String)
+V.Local.sComment.Declare(String)
+V.Local.sOrderLine.Declare(String)
+V.Local.iCount.Declare(Long)
+V.Local.iCount2.Declare(Long)
+V.Local.iOrdinal.Declare(Long)
+
+
+V.uGlobal.sOrders.Redim(-1,-1)
+'Get BI Run ID
+F.Global.BI.GetRunID(V.Global.iBIRunID)
+'Start Logging
+F.Global.BI.StartLogging(V.Global.iBIRunID,-1,-1,"",V.Global.iBILogID)
+
+'SQL Query that will get the product line, order number, Week Number, Unique Number, and Customer.  The Product Line will Match Workcenters on Jobs.
+V.Local.sSql.Set("Select Left(v_Order_Lines.Record_No, 3) as Record_No, v_ORDER_Lines.Product_Line, v_ORDER_Lines.Order_No, v_ORDER_Lines.Extension,v_ORDER_HEADER.User_1, v_ORDER_HEADER.User_5,V_Order_Lines.Customer  from v_Order_Lines Join v_Order_Header on v_Order_Lines.Order_no = v_Order_Header.Order_No where v_Order_Lines.Product_Line In ('AZ', 'CZ', 'FZ', 'HZ', 'RZ', 'SZ', 'MZ', 'BZ') Order by V_Order_Lines.Order_No")
+F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSql)
+
+'Loop through all the records
+F.Intrinsic.Control.DoUntil(V.ODBC.conx!rst.EOF,=,True)
+	'Save the Order Number, Week, Customer, Unique Number, Extension, and Product Line.
+	V.Local.sOrder.Set(V.ODBC.conx!rst.FieldValTrim!Order_No)
+	V.Local.sWeek.Set(V.ODBC.conx!rst.FieldValTrim!User_1)
+	V.Local.sUnique.Set(V.ODBC.conx!rst.FieldValTrim!User_5)
+	V.Local.sExtension.Set(V.ODBC.conx!rst.FieldValTrim!Extension)
+	V.Local.sProdLine.Set(V.ODBC.conx!rst.FieldValTrim!Product_Line)
+	V.Local.sOrderLine.Set(V.ODBC.conx!rst.FieldValTrim!Record_No)
+	V.Local.sCustID.Set(V.ODBC.conx!rst.FieldValTrim!Customer)
+
+	F.Intrinsic.String.Concat("Select Name_Customer from v_Customer_Master where Customer = '",V.Local.sCustID.Trim,"'",V.Local.sSql)
+	F.ODBC.Connection!conx.OpenLocalRecordsetRO("rstCust",V.Local.sSql)
+	F.Intrinsic.Control.If(V.ODBC.conx!rstCust.EOF,=,False)
+	V.Local.sCustID.Set(V.ODBC.conx!rstCust.FieldValTrim!Name_Customer)
+	F.Intrinsic.Control.EndIf
+	F.ODBC.conx!rstCust.Close
+
+	'Check to see if the UDT is empty
+	F.Intrinsic.Control.If(V.uGlobal.sOrders.UBound,=,-1)
+		'If it is redim and and save the order number
+		V.uGlobal.sOrders.Redim(0,0)
+		V.uGlobal.sOrders(v.Local.iCount)!sOrderNo.Set(V.Local.sOrder)
+	F.Intrinsic.Control.EndIf
+
+	'check to see if the Order Number is already part of the udt
+	F.Intrinsic.Control.If(V.Local.sOrder,=,V.uGlobal.sOrders(v.Local.iCount)!sOrderNo)
+		'If it is add the Week number, unique number, and extension to the UDT
+		V.uGlobal.sOrders(v.Local.iCount)!sWeek.Set(V.Local.sWeek)
+		V.uGlobal.sOrders(v.Local.iCount)!sUnique.Set(V.Local.sUnique)
+		V.uGlobal.sOrders(v.Local.iCount)!sCustName.Set(V.Local.sCustID.Trim)
+		V.uGlobal.sOrders(v.Local.iCount)!fExtension.Set(V.Local.sExtension)
+		'Get the Salesperson for the Order and add to the UDT
+		F.Intrinsic.String.Concat("Select SalesPerson from v_Order_Header where Order_No = '",V.Local.sOrder,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+		V.uGlobal.sOrders(v.Local.iCount)!sSalesPerson.Set(V.ODBC.conx!rst2.FieldValTrim!SalesPerson)
+		F.ODBC.conx!rst2.Close
+		'Get the State and Customer Name and add to the UDT
+		F.Intrinsic.String.Concat("Select State_Ship from v_Order_Ship_To where Order_No = '",V.Local.sOrder,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+		V.uGlobal.sOrders(v.Local.iCount)!sState.Set(V.ODBC.conx!rst2.FieldValTrim!State_Ship)
+		F.ODBC.conx!rst2.Close
+
+		'Get the Job and suffix and add to the UDT
+		F.Intrinsic.String.Concat("Select Job, Suffix from Job_Header where Sales_Order = '",V.Local.sOrder,"' and Sales_Order_Line = '",V.Local.sOrderLine,"' and Product_Line = '",V.Local.sProdLine,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+		'Getting error here
+		F.Intrinsic.Control.If(V.ODBC.conx!rst2.EOF,=,False)
+
+			V.Local.sJob.Set(V.ODBC.conx!rst2.FieldValTrim!Job)
+			V.Local.sSuffix.Set(V.ODBC.conx!rst2.FieldValTrim!Suffix)
+			F.ODBC.conx!rst2.Close
+			'Get the Flag closed and Workcenter and add to the UDT
+			F.Intrinsic.String.Concat("Select Flag_Closed , WorkCenter from Job_Operations_WC where Job = '",V.Local.sJob,"' and Suffix = '",V.Local.sSuffix,"' and LMO = 'L' and WorkCenter in ('AZ', 'CZ', 'FZ', 'HZ', 'RZ', 'SZ','MZ','BZ')",V.Local.sSql2)
+			F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+			'Update the UDT based on proper Workcenter set the flag if closed and the amount
+			F.Intrinsic.Control.If(V.ODBC.conx!rst2.EOF,=,False)
+				F.Intrinsic.Control.SelectCase(V.ODBC.conx!rst2.FieldValTrim!Workcenter)
+
+					F.Intrinsic.Control.Case("BZ")
+							F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+								F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sBZClosed,!=,"N")
+									'Set Flag Value
+									V.uGlobal.sOrders(v.Local.iCount)!sBZclosed.Set("Y")
+								F.Intrinsic.Control.EndIf
+							F.Intrinsic.Control.Else
+								V.uGlobal.sOrders(v.Local.iCount)!sBZClosed.Set("N")
+							F.Intrinsic.Control.EndIf
+
+							F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+							F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						'Set Workcenter Dollar value
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sBZValue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sBZValue)
+
+					F.Intrinsic.Control.Case("MZ")
+							F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+								F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sMZClosed,!=,"N")
+									'Set Flag Value
+									V.uGlobal.sOrders(v.Local.iCount)!sMZclosed.Set("Y")
+								F.Intrinsic.Control.EndIf
+							F.Intrinsic.Control.Else
+								V.uGlobal.sOrders(v.Local.iCount)!sMZClosed.Set("N")
+							F.Intrinsic.Control.EndIf
+
+							F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+							F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						'Set Workcenter Dollar value
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sMZValue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sMZValue)
+
+					F.Intrinsic.Control.Case("AZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sAZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sAZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sAZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						'Set Workcenter Dollar value
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sAZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sAZvalue)
+
+					F.Intrinsic.Control.Case("CZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sCZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sCZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sCZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sCZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sCZvalue)
+		
+					F.Intrinsic.Control.Case("FZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sFZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sFZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sFZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sFZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sFZvalue)
+
+					F.Intrinsic.Control.Case("HZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sHZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sHZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sHZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sHZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sHZvalue)
+
+					F.Intrinsic.Control.Case("RZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sRZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sRZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sRZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sRZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sRZvalue)
+		
+					F.Intrinsic.Control.Case("SZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sSZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sSZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sSZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sSZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sSZvalue)
+				F.Intrinsic.Control.EndSelect
+			F.Intrinsic.Control.EndIf
+			F.ODBC.conx!rst2.Close
+
+		F.Intrinsic.Control.Else
+			F.ODBC.conx!rst2.Close
+		F.Intrinsic.Control.Endif
+	F.Intrinsic.Control.Else
+		'If the order number is not in the UDT add new row of information to the UDT.
+		F.Intrinsic.Math.Add(V.Local.iCount,1,V.Local.iCount)
+		V.uGlobal.sOrders.RedimPreserve(0,V.Local.iCount)
+		'Set the Order number, week number, unique number, and extension
+		V.uGlobal.sOrders(v.Local.iCount)!sOrderNo.Set(V.Local.sOrder)
+		V.uGlobal.sOrders(v.Local.iCount)!sWeek.Set(V.Local.sWeek)
+		V.uGlobal.sOrders(v.Local.iCount)!sUnique.Set(V.Local.sUnique)
+		V.uGlobal.sOrders(v.Local.iCount)!fExtension.Set(V.Local.sExtension)
+		V.uGlobal.sOrders(v.Local.iCount)!sCustName.Set(V.Local.sCustID.Trim)
+		'Get the Sales person and save to the udt
+		F.Intrinsic.String.Concat("Select SalesPerson from v_Order_Header where Order_No = '",V.Local.sOrder,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+		V.uGlobal.sOrders(v.Local.iCount)!sSalesPerson.Set(V.ODBC.conx!rst2.FieldValTrim!SalesPerson)
+		F.ODBC.conx!rst2.Close
+		'Get the State and customer name and add to the udt
+		F.Intrinsic.String.Concat("Select State_Ship from v_Order_Ship_To where Order_No = '",V.Local.sOrder,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+		V.uGlobal.sOrders(v.Local.iCount)!sState.Set(V.ODBC.conx!rst2.FieldValTrim!State_Ship)
+		F.ODBC.conx!rst2.Close
+		'Get the Job and suffix and add to the UDT
+		F.Intrinsic.String.Concat("Select Job, Suffix from Job_Header where Sales_Order = '",V.Local.sOrder,"' and Product_Line = '",V.Local.sProdLine,"'",V.Local.sSql2)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+
+		F.Intrinsic.Control.If(V.ODBC.conx!rst2.EOF,=,False)
+			V.Local.sJob.Set(V.ODBC.conx!rst2.FieldValTrim!Job)
+			V.Local.sSuffix.Set(V.ODBC.conx!rst2.FieldValTrim!Suffix)
+			F.ODBC.conx!rst2.Close
+			'Get the Flag Closed value and the workCenter
+			F.Intrinsic.String.Concat("Select Flag_Closed , WorkCenter from Job_Operations_WC where Job = '",V.Local.sJob,"' and Suffix = '",V.Local.sSuffix,"' and LMO = 'L' and WorkCenter in ('AZ', 'CZ', 'FZ', 'HZ', 'RZ', 'SZ', 'MZ','BZ')",V.Local.sSql2)
+			F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst2",V.Local.sSql2)
+			'Update the flag closed and amount in the UDT based on the Work center
+			F.Intrinsic.Control.If(V.ODBC.conx!rst2.EOF,=,False)
+				F.Intrinsic.Control.SelectCase(V.ODBC.conx!rst2.FieldValTrim!Workcenter)
+
+					F.Intrinsic.Control.Case("BZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sBZClosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sBZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sBZClosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sBZValue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sBZValue)
+
+					F.Intrinsic.Control.Case("MZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sMZClosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sMZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sMZClosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sMZValue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sMZValue)
+
+					F.Intrinsic.Control.Case("AZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sAZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sAZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sAZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sAZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sAZvalue)
+				
+					F.Intrinsic.Control.Case("CZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sCZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sCZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sCZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sCZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sCZvalue)
+			
+					F.Intrinsic.Control.Case("FZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sFZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sFZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sFZclosed.Set("N")
+							F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+							F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Control.EndIf
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sFZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sFZvalue)
+
+					F.Intrinsic.Control.Case("HZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sHZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sHZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sHZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sHZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sHZvalue)
+			
+					F.Intrinsic.Control.Case("RZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sRZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sRZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sRZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sRZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sRZvalue)
+			
+					F.Intrinsic.Control.Case("SZ")
+						F.Intrinsic.Control.If(V.ODBC.conx!rst2.FieldValTrim!Flag_Closed,=,"Y")
+							F.Intrinsic.Control.If(V.uGlobal.sOrders(v.Local.iCount)!sSZclosed,!=,"N")
+								'Set Flag Value
+								V.uGlobal.sOrders(v.Local.iCount)!sSZclosed.Set("Y")
+							F.Intrinsic.Control.EndIf
+						F.Intrinsic.Control.Else
+							V.uGlobal.sOrders(v.Local.iCount)!sSZclosed.Set("N")
+						F.Intrinsic.Control.EndIf
+
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sComment,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.String.Format(V.uGlobal.sOrders(v.Local.iCount)!sComment,"##########",V.uGlobal.sOrders(v.Local.iCount)!sComment)
+						F.Intrinsic.Math.Add(V.uGlobal.sOrders(v.Local.iCount)!sSZvalue,V.Local.sExtension,V.uGlobal.sOrders(v.Local.iCount)!sSZvalue)
+
+				F.Intrinsic.Control.EndSelect
+			F.Intrinsic.Control.EndIf
+			F.ODBC.conx!rst2.Close
+		F.Intrinsic.Control.Else
+			F.ODBC.conx!rst2.Close
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+	F.ODBC.conx!rst.MoveNext
+F.Intrinsic.Control.Loop
+F.ODBC.conx!rst.Close
+
+
+'Set the BIRunID for the UDT
+F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.sOrders!iBIRunID,V.Global.iBIRunID)
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sAZclosed,"AZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sAZvalue,"AZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sCZclosed,"CZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sCZvalue,"CZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sFZclosed,"FZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sFZvalue,"FZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sHZclosed,"HZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sHZvalue,"HZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sRZclosed,"RZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sRZvalue,"RZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sSZclosed,"SZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sSZvalue,"SZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sMZClosed,"MZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sMZValue,"MZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sBZClosed,"BZ_Close")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sBZValue,"BZ")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!iBIRunID,"BIRUNID")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sState,"State")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sSalesPerson,"SalesPerson")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sOrderNo,"GS_OrderNo")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sCustName,"Customer_Name")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sUnique,"Order_No")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sWeek,"Week_No")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!fExtension,"Total_Order")
+F.Intrinsic.Variable.SetUDTFieldReference(V.uGlobal.sOrders!sComment,"Comments")
+F.Intrinsic.Variable.UDTMultiSeekSet(V.uGlobal.sOrders!sComment,"",V.uGlobal.sOrders!sComment,"0")
+
+
+'Open recordset and save the UDT to the Recordset
+F.ODBC.Connection!conx.OpenRecordsetRW("rst","Select * from GCG_4010_CON_StrpLst")
+
+F.Intrinsic.Variable.SaveUDTToRecordSet("conx","rst","v.uGlobal.sOrders")
+F.ODBC.conx!rst.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("GetData_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4010_Con_StripRPT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.GetData.End
+
+Program.Sub.Report.Start
+F.Intrinsic.Control.SetErrorHandler("Report_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+V.Local.sParam.Declare(String)
+V.Local.sVal.Declare(String)
+'Stop Logging
+F.Global.BI.StopLogging(V.Global.iBILogID)
+V.Local.sParam.Set("BIRUNID")
+V.Local.sVal.Set(V.Global.iBIRunID)
+'Print the Report
+F.Global.BI.RunReportPreProcessor(v.Global.iBIRunID,v.Global.iBILogID,v.Local.sParam,v.Local.sVal,"",-1,True,"",-1,"",-1,"","",v.Global.iBIRunID)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Report_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4010_Con_StripRPT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Report.End
+
+Program.Sub.UnLoad.Start
+F.Intrinsic.Control.SetErrorHandler("UnLoad_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+'Close Connection
+F.ODBC.Connection!conx.Close
+'End the Program.
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("UnLoad_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4010_Con_StripRPT.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.UnLoad.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$bbaker$}$20230731092330990$}$pM7xsHplA2E9VCTenDTJ47gi1rF/t66WPGkQZObTmHlBREQzjEeduUCkJLMgyMGp+nyybKH+Smg=
+Program.Sub.Comments.End
